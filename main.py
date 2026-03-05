@@ -1,8 +1,8 @@
 """
-╔════════════════════════════════════════════════════════╗
-║          YT-DLP + FFMPEG SUPER DOWNLOADER              ║
-║   Best quality · Audio rip · Subtitles · Thumbnails    ║
-╚════════════════════════════════════════════════════════╝
+╔═══════════════════════════════════════════════════════╗
+║          YT-DLP + FFMPEG SUPER DOWNLOADER             ║
+║   Best quality · Audio rip · Subtitles · Thumbnails   ║
+╚═══════════════════════════════════════════════════════╝
 
 Requirements:
     pip install yt-dlp rich
