@@ -435,10 +435,12 @@ class SuperDownloader:
             "embedsubtitles": embed_subs,
             "subtitleslangs": [sub_langs] if (write_subs or embed_subs) else [],
             "keepvideo": False,
+            "overwrites": True,           # always re-download, never skip an existing file
         }
 
         if not ffmpeg_available():
-            # Graceful degradation
+            # Without FFmpeg, yt-dlp can't merge separate video+audio.
+            # Fall back to the best pre-merged stream available.
             opts["format"] = "best"
             opts.pop("merge_output_format", None)
             opts["postprocessors"] = []
