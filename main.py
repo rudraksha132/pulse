@@ -405,9 +405,8 @@ class SuperDownloader:
             # MKV supports every codec natively (AV1, VP9, Opus) without re-encoding.
             # mp4 would force AAC transcode for Opus audio — lossy and slower.
             "merge_output_format": "mkv",
-            # Keep sorting simple: strict resolution priority usually works best
-            # Complex codec sorting can cause yt-dlp to pick 1080p AV1 over 4K VP9.
-            "format_sort": ["res"],
+            # Prioritize: 1. Resolution 2. Video Bitrate (heaviest file) 3. Audio Bitrate
+            "format_sort": ["res", "vbr", "abr"],
             "progress_hooks": [self.rich_progress.hook],
             "quiet": True,
             "no_warnings": True,
@@ -645,7 +644,7 @@ class SuperDownloader:
             start_idx = IntPrompt.ask("  Start index [dim](1 = first)[/dim]", default=1)
             end_idx   = Prompt.ask("  End index   [dim](leave blank for all)[/dim]", default="").strip()
 
-            fmt = "bestvideo*+bestaudio*/best"
+            fmt = "bestvideo+bestaudio/best"
             ydl_opts = self._build_ydl_opts(
                 fmt,
                 embed_thumb=embed_thumb,
