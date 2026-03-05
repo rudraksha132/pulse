@@ -1,7 +1,7 @@
 """
 ╔════════════════════════════════════════════════════════╗
 ║          YT-DLP + FFMPEG SUPER DOWNLOADER              ║
-║  Best quality · Audio rip · Subtitles · Thumbnails     ║
+║   Best quality · Audio rip · Subtitles · Thumbnails    ║
 ╚════════════════════════════════════════════════════════╝
 
 Requirements:
