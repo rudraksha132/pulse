@@ -405,11 +405,11 @@ class SuperDownloader:
             # MKV supports every codec natively (AV1, VP9, Opus) without re-encoding.
             # mp4 would force AAC transcode for Opus audio — lossy and slower.
             "merge_output_format": "mkv",
-            # Sort priority: resolution → AV1 > VP9 > H264 → bitrate → filesize
+            # 1. Resolution, 2. Highest Bitrate (Heaviest file), 3. Best Codecs
             "format_sort": [
                 "res",               # highest resolution first
-                "codec:av01:vp9",    # AV1 > VP9 > anything else
-                "vbr",               # higher video bitrate at same res
+                "vbr",               # explicitly force highest video bitrate before codec
+                "codec:av01:vp9",    # AV1 > VP9
                 "acodec:opus:aac",   # Opus > AAC for audio
                 "abr",               # higher audio bitrate
             ],
