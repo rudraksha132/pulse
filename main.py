@@ -1,8 +1,8 @@
 """
-╔═══════════════════════════════════════════════════════╗
-║          YT-DLP + FFMPEG SUPER DOWNLOADER             ║
-║   Best quality · Audio rip · Subtitles · Thumbnails   ║
-╚═══════════════════════════════════════════════════════╝
+╔════════════════════════════════════════════════════════╗
+║          YT-DLP + FFMPEG SUPER DOWNLOADER              ║
+║   Best quality · Audio rip · Subtitles · Thumbnails    ║
+╚════════════════════════════════════════════════════════╝
 
 Requirements:
     pip install yt-dlp rich
@@ -23,7 +23,6 @@ Features:
   • Rich terminal UI with live panels and tables
 """
 
-import json
 import os
 import re
 import sys
@@ -53,6 +52,7 @@ from rich import box
 DOWNLOAD_DIR   = "storage"
 MAX_RETRIES    = 3
 RETRY_DELAY    = 2          # seconds (doubles each attempt)
+CONCURRENT_DL  = 5          # parallel fragment downloads
 FFMPEG_PATH    = shutil.which("ffmpeg") or "ffmpeg"
 FFPROBE_PATH   = shutil.which("ffprobe") or "ffprobe"
 
@@ -67,10 +67,6 @@ console = Console()
 # ─────────────────────────────────────────────
 def ffmpeg_available() -> bool:
     return shutil.which("ffmpeg") is not None
-
-
-def aria2c_available() -> bool:
-    return shutil.which("aria2c") is not None
 
 
 def format_bytes(size: float | None) -> str:
@@ -116,14 +112,6 @@ def print_header() -> None:
     else:
         console.print(f"[dim]FFmpeg:[/dim] [green]{FFMPEG_PATH}[/green]  "
                       f"[dim]Output:[/dim] [cyan]{os.path.abspath(DOWNLOAD_DIR)}[/cyan]")
-
-    # Show active download engine
-    if aria2c_available():
-        console.print("[dim]Engine:[/dim] [bold green]aria2c ⚡[/bold green] "
-                      "[dim](16 parallel connections per file)[/dim]")
-    else:
-        console.print("[dim]Engine:[/dim] [blue]native concurrent[/blue] "
-                      "[dim](16 parallel fragment downloads)[/dim]")
     console.print()
 
 
@@ -136,6 +124,30 @@ def run_ffmpeg(*args: str, show_output: bool = False) -> subprocess.CompletedPro
     if not show_output:
         return subprocess.run(cmd, capture_output=True, text=True)
     return subprocess.run(cmd)
+
+
+def remux_mkv_to_mp4(mkv_path: str) -> str:
+    """
+    Losslessly remux an MKV file to MP4 using stream-copy (no re-encoding).
+    MKV is used during merge to support any codec (AV1/VP9); then we swap
+    the container to MP4 without touching the video/audio data.
+    Returns the new .mp4 path, or the original mkv path if remux fails.
+    """
+    mp4_path = os.path.splitext(mkv_path)[0] + ".mp4"
+    with console.status("[cyan]📦 Remuxing MKV → MP4 (lossless)…", spinner="dots"):
+        result = run_ffmpeg(
+            "-i", mkv_path,
+            "-c", "copy",          # stream-copy: no re-encode, no quality loss
+            "-movflags", "+faststart",  # moves index to front for web streaming
+            mp4_path,
+        )
+    if result.returncode == 0 and os.path.exists(mp4_path):
+        os.remove(mkv_path)        # clean up the intermediate MKV
+        console.print(f"[green]✅ Remuxed to MP4:[/green] {os.path.basename(mp4_path)}")
+        return mp4_path
+    else:
+        console.print("[yellow]⚠  Remux failed — keeping MKV.[/yellow]")
+        return mkv_path
 
 
 def clip_video(src: str, start: str, end: str, out: str) -> str:
@@ -212,89 +224,6 @@ def add_metadata(video: str, title: str = "", artist: str = "",
         os.replace(tmp, video)
     elif os.path.exists(tmp):
         os.remove(tmp)
-
-
-def verify_download(filepath: str, expected_duration: int = 0) -> None:
-    """Run ffprobe on the downloaded file and display quality details."""
-    if not shutil.which("ffprobe"):
-        return
-
-    try:
-        result = subprocess.run(
-            [FFPROBE_PATH, "-v", "quiet", "-print_format", "json", "-show_streams",
-             "-show_format", filepath],
-            capture_output=True, text=True, timeout=15,
-        )
-        if result.returncode != 0:
-            return
-
-        data = json.loads(result.stdout)
-        streams = data.get("streams", [])
-        fmt_info = data.get("format", {})
-
-        video_lines: list[str] = []
-        audio_lines: list[str] = []
-
-        for s in streams:
-            codec_type = s.get("codec_type")
-            if codec_type == "video" and s.get("disposition", {}).get("attached_pic") != 1:
-                w = s.get("width", "?")
-                h = s.get("height", "?")
-                codec = s.get("codec_name", "?")
-                fps_r = s.get("r_frame_rate", "0/1")
-                try:
-                    num, den = fps_r.split("/")
-                    fps = round(int(num) / int(den))
-                except (ValueError, ZeroDivisionError):
-                    fps = "?"
-                bitrate = s.get("bit_rate")
-                br_str = f"{int(bitrate) // 1000} kbps" if bitrate else "N/A"
-                pix_fmt = s.get("pix_fmt", "")
-                hdr = "HDR" if any(x in pix_fmt for x in ("p010", "yuv420p10")) else "SDR"
-                video_lines.append(
-                    f"  🎬 [bold]{w}×{h}[/bold] [cyan]{codec}[/cyan] "
-                    f"[dim]{fps}fps · {br_str} · {hdr}[/dim]"
-                )
-            elif codec_type == "audio":
-                codec = s.get("codec_name", "?")
-                sr = s.get("sample_rate", "?")
-                ch = s.get("channels", "?")
-                bitrate = s.get("bit_rate")
-                br_str = f"{int(bitrate) // 1000} kbps" if bitrate else "N/A"
-                audio_lines.append(
-                    f"  🔊 [cyan]{codec}[/cyan] [dim]{br_str} · {sr}Hz · {ch}ch[/dim]"
-                )
-
-        # Duration check
-        duration_str = ""
-        file_dur = float(fmt_info.get("duration", 0))
-        if expected_duration and file_dur:
-            diff = abs(file_dur - expected_duration)
-            if diff < 2:
-                duration_str = f"  ⏱ [green]Duration OK[/green] [dim]({file_dur:.0f}s)[/dim]"
-            else:
-                duration_str = (f"  ⏱ [yellow]Duration mismatch:[/yellow] "
-                                f"expected {expected_duration}s, got {file_dur:.0f}s")
-
-        # File size
-        try:
-            size = os.path.getsize(filepath)
-            size_str = format_bytes(size)
-        except OSError:
-            size_str = "N/A"
-
-        lines = ["[bold white]📊 Quality Verification[/bold white]"]
-        lines.extend(video_lines)
-        lines.extend(audio_lines)
-        if duration_str:
-            lines.append(duration_str)
-        lines.append(f"  💾 [dim]File size: {size_str}[/dim]")
-
-        console.print(Panel("\n".join(lines), border_style="bright_blue"))
-
-    except Exception:
-        pass  # Non-critical — don't break the flow
-
 
 
 # ─────────────────────────────────────────────
@@ -375,7 +304,9 @@ class SuperDownloader:
         ydl_opts = {
             "quiet": True,
             "no_warnings": True,
-            "extractor_args": {"youtube": {"player_client": ["android", "ios", "web"]}},
+            # 'default' lets yt-dlp auto-negotiate the best client combo
+            "extractor_args": {"youtube": {"player_client": ["default"]}},
+
         }
         with console.status("[cyan]Fetching video info…", spinner="dots"):
             try:
@@ -494,146 +425,39 @@ class SuperDownloader:
         if extra_postprocessors:
             postprocessors.extend(extra_postprocessors)
 
-        # Detect download engine once
-        use_aria2c = aria2c_available()
-
         opts: dict = {
             "format": fmt,
             "outtmpl": outtmpl,
-
-            # ── Container ────────────────────────────────────────────────────
-            # MKV holds any codec (AV1, VP9, Opus) without re-encoding.
-            # mp4 forces lossy AAC transcode for Opus audio.
+            # mkv supports ALL codecs (AV1, VP9, H.265, Opus, etc.) — mp4 can't
             "merge_output_format": "mkv",
-
-            # ── Format Sort — from yt-dlp docs (fields in priority order) ───
-            # res: highest resolution first
-            # fps: 60fps > 30fps at same resolution
-            # hdr: prefer HDR streams (DV > HDR10+ > HDR10 > HLG > SDR)
-            # source: prefer original/source-quality encodings from extractor
-            # tbr: total bitrate — video+audio combined (largest wins)
-            # size: exact filesize if known, else approx (largest = best quality)
-            # acodec: best audio codec (opus > aac > mp4a etc)
-            # abr: audio bitrate last
-            # NOTE: vcodec is intentionally excluded — including it causes yt-dlp
-            # to pick a smaller AV1 file over a much larger (better) VP9 file.
-            "format_sort": ["res", "fps", "hdr:12", "source", "tbr", "size", "acodec", "abr"],
-            # Force this sort order over extractor defaults
-            "format_sort_force": True,
-
-            # ── Progress & Output ─────────────────────────────────────────────
             "progress_hooks": [self.rich_progress.hook],
             "quiet": True,
             "no_warnings": True,
-
-            # ── Download Speed & Robustness ──────────────────────────────────
-            # aria2c and concurrent_fragment_downloads are MUTUALLY EXCLUSIVE:
-            # • aria2c handles its own parallelism (-j/-x/-s args)
-            # • concurrent_fragment_downloads is yt-dlp's native parallelism
-            # Using both causes fragment-merging failures and corrupted files.
-            "concurrent_fragment_downloads": 1 if use_aria2c else 16,
-            # NOTE: http_chunk_size is intentionally OMITTED — values ≥ 10 MiB
-            # trigger YouTube's per-request throttle wall. yt-dlp's internal
-            # anti-throttle logic adapts chunk sizes automatically.
+            "concurrent_fragment_downloads": CONCURRENT_DL,
             "retries": MAX_RETRIES,
             "fragment_retries": MAX_RETRIES,
-            "extractor_retries": MAX_RETRIES,
-
-            # Write directly to final filename (no orphaned .part files)
-            "nopart": True,
-            # 1 MB I/O read buffer for efficiency
-            "buffersize": 1024 * 1024,
-
             "postprocessors": postprocessors,
+            # 'default' lets yt-dlp auto-negotiate the best client combo
+            "extractor_args": {"youtube": {"player_client": ["default"]}},
 
-            # ── YouTube Player Client Selection ───────────────────────────────
-            # ios, android, web: reliable clients with widest format coverage.
-            # tv_embedded: last-resort fallback — can return DRM-protected
-            # streams on some videos, causing silent download failures.
-            # NOTE: android_vr is intentionally excluded — it returns video-only
-            # streams with no matching audio tracks (confirmed cause of silence).
-            "extractor_args": {"youtube": {
-                "player_client": ["ios", "android", "web", "tv_embedded"],
-                # duplicate: expose all streams including alternate CDN copies
-                "formats": ["duplicate"],
-            }},
-
-            # ── aria2c External Downloader (16 parallel connections) ──────────
-            # When aria2c is installed, each file downloads via 16 connections
-            # instead of 1 — massively faster on high-bandwidth connections.
-            # NOTE: When aria2c is active, concurrent_fragment_downloads is set
-            # to 1 (above) to avoid conflicts.
-            # Install: winget install aria2
-            "external_downloader": "aria2c" if use_aria2c else None,
-            "external_downloader_args": {"aria2c": [
-                "-c",           # resume partial downloads
-                "-j", "16",     # 16 parallel download jobs
-                "-x", "16",     # 16 connections per server
-                "-s", "16",     # split each file into 16 segments
-                "-k", "1M",     # 1 MB chunk size per segment
-            ]} if use_aria2c else None,
-
+            # Force yt-dlp to pick highest res > highest bitrate > best codec
+            "format_sort": ["res:4320", "br", "codec:av01:vp9.2:vp9:h265:h264"],
+            "format_sort_force": True,
+            "prefer_free_formats": True,
             "writethumbnail": embed_thumb,
             "writesubtitles": write_subs,
             "embedsubtitles": embed_subs,
             "subtitleslangs": [sub_langs] if (write_subs or embed_subs) else [],
             "keepvideo": False,
-            "overwrites": True,           # always re-download, never skip existing file
         }
 
         if not ffmpeg_available():
-            # Without FFmpeg, yt-dlp can't merge separate video+audio streams.
-            # Fall back to the best pre-merged stream available.
+            # Graceful degradation
             opts["format"] = "best"
             opts.pop("merge_output_format", None)
             opts["postprocessors"] = []
 
         return opts
-
-    # ── Format Preview ────────────────────────
-    def _show_format_preview(self, info: dict, fmt_str: str) -> None:
-        """Show a summary of the resolved best video + audio format before download."""
-        formats = info.get("formats", [])
-        if not formats:
-            return
-
-        try:
-            # Find best video and audio from available formats
-            best_video = None
-            best_audio = None
-            for f in reversed(formats):  # reversed = highest quality last in yt-dlp
-                if f.get("vcodec", "none") != "none" and not best_video:
-                    best_video = f
-                if f.get("acodec", "none") != "none" and f.get("vcodec", "none") == "none" and not best_audio:
-                    best_audio = f
-                if best_video and best_audio:
-                    break
-
-            lines: list[str] = ["[bold white]📋 Selected Format[/bold white]"]
-            if best_video:
-                res = best_video.get("resolution") or f"{best_video.get('width', '?')}x{best_video.get('height', '?')}"
-                vcodec = best_video.get("vcodec", "?").split(".")[0]  # strip codec profile
-                fps = best_video.get("fps") or "?"
-                tbr = best_video.get("tbr")
-                tbr_str = f"{tbr:.0f} kbps" if tbr else "N/A"
-                hdr = best_video.get("dynamic_range") or "SDR"
-                size = format_bytes(best_video.get("filesize") or best_video.get("filesize_approx"))
-                lines.append(
-                    f"  🎬 [bold]{res}[/bold] [cyan]{vcodec}[/cyan] "
-                    f"[dim]{fps}fps · {tbr_str} · {hdr} · ~{size}[/dim]"
-                )
-            if best_audio:
-                acodec = best_audio.get("acodec", "?").split(".")[0]
-                abr = best_audio.get("abr")
-                abr_str = f"{abr:.0f} kbps" if abr else "N/A"
-                asr = best_audio.get("asr") or "?"
-                lines.append(
-                    f"  🔊 [cyan]{acodec}[/cyan] [dim]{abr_str} · {asr}Hz[/dim]"
-                )
-
-            console.print(Panel("\n".join(lines), border_style="dim"))
-        except Exception:
-            pass  # Non-critical
 
     def download(self, url: str, ydl_opts: dict) -> str | None:
         """
@@ -657,9 +481,9 @@ class SuperDownloader:
                     return DOWNLOAD_DIR
 
                 filename = ydl.prepare_filename(info)
-                # If merged to mp4, the extension may have changed
+                # Merged output is mkv; check likely extensions in priority order
                 base, _ = os.path.splitext(filename)
-                for ext in (".mp4", ".mkv", ".webm", ".mp3", ".flac", ".aac", ".wav", ".opus", ".m4a"):
+                for ext in (".mkv", ".mp4", ".webm", ".mp3", ".flac", ".aac", ".wav", ".opus", ".m4a"):
                     if os.path.exists(base + ext):
                         return base + ext
                 if os.path.exists(filename):
@@ -774,8 +598,7 @@ class SuperDownloader:
 
         # ── Mode: Best Quality ────────────────
         if choice == "1":
-            # * = allow cross-container selection (e.g. webm video + m4a audio)
-            fmt = "bestvideo*+bestaudio*/best"
+            fmt = "bestvideo+bestaudio/best"
             ydl_opts = self._build_ydl_opts(
                 fmt,
                 embed_thumb=embed_thumb,
@@ -784,10 +607,6 @@ class SuperDownloader:
                 sub_langs=sub_langs,
                 sponsorblock=sponsorblock,
             )
-
-            # Show resolved format preview before downloading
-            self._show_format_preview(info, ydl_opts.get("format", fmt))
-
             console.print("[cyan]⬇  Downloading best quality…[/cyan]")
             filepath = self.download(url, ydl_opts)
 
@@ -845,7 +664,7 @@ class SuperDownloader:
             start_idx = IntPrompt.ask("  Start index [dim](1 = first)[/dim]", default=1)
             end_idx   = Prompt.ask("  End index   [dim](leave blank for all)[/dim]", default="").strip()
 
-            fmt = "bestvideo*+bestaudio*/best"
+            fmt = "bestvideo+bestaudio/best"
             ydl_opts = self._build_ydl_opts(
                 fmt,
                 embed_thumb=embed_thumb,
@@ -859,10 +678,6 @@ class SuperDownloader:
             if end_idx:
                 ydl_opts["playlistend"] = int(end_idx)
 
-            # Anti-throttle: random delay between playlist items
-            ydl_opts["sleep_interval"] = 2
-            ydl_opts["max_sleep_interval"] = 5
-
             console.print(f"[cyan]📋 Downloading playlist…[/cyan]")
             filepath = self.download(url, ydl_opts)
 
@@ -872,15 +687,16 @@ class SuperDownloader:
         # ── Post-download actions ─────────────
         console.print()
         if filepath and os.path.isfile(filepath):
+
+            # Remux MKV → MP4 (lossless container swap, no quality loss)
+            if ffmpeg_available() and choice in ("1", "3", "4") and filepath.endswith(".mkv"):
+                filepath = remux_mkv_to_mp4(filepath)
+
             console.print(Panel(
                 f"[bold green]✅ Download complete![/bold green]\n"
                 f"[dim]Saved:[/dim] [cyan]{os.path.abspath(filepath)}[/cyan]",
                 border_style="green",
             ))
-
-            # Verify download quality with ffprobe
-            expected_dur = info.get("duration", 0) if not info.get("_type") == "playlist" else 0
-            verify_download(filepath, expected_duration=expected_dur)
 
             # Add metadata
             if ffmpeg_available() and choice in ("1", "3"):
