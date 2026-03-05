@@ -1,6 +1,6 @@
 <div align="center">
 
-# ⚡ pulse
+# ⚡ PULSE
 
 **The best YouTube/web video downloader — powered by yt-dlp & FFmpeg**
 
