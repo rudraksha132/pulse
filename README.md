@@ -1,6 +1,6 @@
 <div align="center">
 
-# ⚡ ytdlp-ffmpeg-downloader
+# ⚡ pulse
 
 **The best YouTube/web video downloader — powered by yt-dlp & FFmpeg**
 
@@ -40,8 +40,8 @@
 ## 🚀 Installation
 
 ```bash
-git clone https://github.com/rudraksha/ytdlp-ffmpeg-downloader.git
-cd ytdlp-ffmpeg-downloader
+git clone https://github.com/rudraksha132/pulse.git
+cd pulse
 pip install yt-dlp rich
 ```
 
