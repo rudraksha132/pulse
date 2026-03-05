@@ -381,6 +381,7 @@ class SuperDownloader:
         fmt: str,
         audio_only: bool = False,
         audio_fmt: str = "mp3",
+        audio_quality: str = "0",
         embed_thumb: bool = True,
         embed_subs: bool = False,
         write_subs: bool = False,
@@ -397,7 +398,7 @@ class SuperDownloader:
             postprocessors.append({
                 "key": "FFmpegExtractAudio",
                 "preferredcodec": audio_fmt,
-                "preferredquality": "0",   # best (VBR for MP3, lossless for FLAC)
+                "preferredquality": audio_quality,
             })
 
         if embed_thumb and ffmpeg_available():
@@ -551,6 +552,57 @@ class SuperDownloader:
                 return out
         return filepath
 
+    def prompt_video_quality(self) -> tuple[str, str]:
+        qualities = [
+            ("Best Available (Up to 8K)", "bestvideo+bestaudio/best"),
+            ("8K (4320p)", "bestvideo[height<=4320]+bestaudio/best[height<=4320]/best"),
+            ("4K (2160p)", "bestvideo[height<=2160]+bestaudio/best[height<=2160]/best"),
+            ("1440p (2K)", "bestvideo[height<=1440]+bestaudio/best[height<=1440]/best"),
+            ("1080p (FHD)", "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best"),
+            ("720p (HD)", "bestvideo[height<=720]+bestaudio/best[height<=720]/best"),
+            ("480p (SD)", "bestvideo[height<=480]+bestaudio/best[height<=480]/best"),
+            ("360p", "bestvideo[height<=360]+bestaudio/best[height<=360]/best"),
+            ("240p", "bestvideo[height<=240]+bestaudio/best[height<=240]/best"),
+            ("144p", "bestvideo[height<=144]+bestaudio/best[height<=144]/best"),
+            ("Worst Available (Smallest)", "worstvideo+worstaudio/worst"),
+        ]
+        quality_opts = Table.grid(padding=(0, 2))
+        quality_opts.add_column(style="bold yellow")
+        quality_opts.add_column()
+        for i, (name, _) in enumerate(qualities, 1):
+            quality_opts.add_row(str(i), f"[cyan]{name}[/cyan]")
+        
+        console.print()
+        console.print(Rule("[dim]Video Quality[/dim]"))
+        console.print(quality_opts)
+        q_idx = IntPrompt.ask("Select Quality", default=1, show_default=True)
+        q_idx = max(1, min(q_idx, len(qualities)))
+        return qualities[q_idx - 1][0], qualities[q_idx - 1][1]
+
+    def prompt_audio_quality(self) -> str:
+        qualities = [
+            ("Best (VBR/Lossless)", "0"),
+            ("320 kbps (CBR)", "320"),
+            ("256 kbps (CBR)", "256"),
+            ("192 kbps (CBR)", "192"),
+            ("128 kbps (CBR)", "128"),
+            ("96 kbps (CBR)", "96"),
+            ("64 kbps (CBR)", "64"),
+            ("Worst", "9"),
+        ]
+        quality_opts = Table.grid(padding=(0, 2))
+        quality_opts.add_column(style="bold yellow")
+        quality_opts.add_column()
+        for i, (name, _) in enumerate(qualities, 1):
+            quality_opts.add_row(str(i), f"[cyan]{name}[/cyan]")
+        
+        console.print()
+        console.print(Rule("[dim]Audio Extraction Quality[/dim]"))
+        console.print(quality_opts)
+        q_idx = IntPrompt.ask("Select Quality", default=1, show_default=True)
+        q_idx = max(1, min(q_idx, len(qualities)))
+        return qualities[q_idx - 1][1]
+
     # ── Main Menu ─────────────────────────────
     def run(self) -> None:
         print_header()
@@ -572,9 +624,9 @@ class SuperDownloader:
         modes = Table.grid(padding=(0, 2))
         modes.add_column(style="bold yellow")
         modes.add_column()
-        modes.add_row("1", "⚡  [bold]Best Quality Video[/bold]  [dim](4K/8K + best audio, merged via FFmpeg)[/dim]")
+        modes.add_row("1", "⚡  [bold]Video Download[/bold]        [dim](Choose resolution from 144p to 8K)[/dim]")
         modes.add_row("2", "🎵  [bold]Audio Only[/bold]          [dim](MP3 / FLAC / AAC / WAV / OPUS)[/dim]")
-        modes.add_row("3", "🛠   [bold]Custom Format[/bold]       [dim](choose exactly which stream)[/dim]")
+        modes.add_row("3", "🛠   [bold]Custom Format[/bold]       [dim](choose exactly which stream via ID)[/dim]")
         modes.add_row("4", "📋  [bold]Playlist[/bold]             [dim](download all or a range)[/dim]")
         console.print(modes)
         console.print()
@@ -596,9 +648,9 @@ class SuperDownloader:
         sponsorblock  = Confirm.ask("  🚫  Skip sponsored segments (SponsorBlock)?",      default=False)
         console.print()
 
-        # ── Mode: Best Quality ────────────────
+        # ── Mode: Video Download ────────────────
         if choice == "1":
-            fmt = "bestvideo+bestaudio/best"
+            q_name, fmt = self.prompt_video_quality()
             ydl_opts = self._build_ydl_opts(
                 fmt,
                 embed_thumb=embed_thumb,
@@ -607,7 +659,7 @@ class SuperDownloader:
                 sub_langs=sub_langs,
                 sponsorblock=sponsorblock,
             )
-            console.print("[cyan]⬇  Downloading best quality…[/cyan]")
+            console.print(f"[cyan]⬇  Downloading video: {q_name}…[/cyan]")
             filepath = self.download(url, ydl_opts)
 
         # ── Mode: Audio Only ──────────────────
@@ -621,14 +673,20 @@ class SuperDownloader:
             idx = max(1, min(idx, len(keys)))
             audio_fmt = keys[idx - 1]
 
+            audio_quality = "0"
+            if audio_fmt in ("mp3", "aac", "m4a", "opus"):
+                audio_quality = self.prompt_audio_quality()
+
             ydl_opts = self._build_ydl_opts(
                 "bestaudio/best",
                 audio_only=True,
                 audio_fmt=audio_fmt,
+                audio_quality=audio_quality,
                 embed_thumb=embed_thumb,
                 sponsorblock=sponsorblock,
             )
-            console.print(f"[cyan]🎵 Extracting audio as {audio_fmt.upper()}…[/cyan]")
+            q_display = audio_quality if audio_quality != "0" else "Best"
+            console.print(f"[cyan]🎵 Extracting audio as {audio_fmt.upper()} (Quality: {q_display})…[/cyan]")
             filepath = self.download(url, ydl_opts)
 
         # ── Mode: Custom Format ───────────────
@@ -664,7 +722,8 @@ class SuperDownloader:
             start_idx = IntPrompt.ask("  Start index [dim](1 = first)[/dim]", default=1)
             end_idx   = Prompt.ask("  End index   [dim](leave blank for all)[/dim]", default="").strip()
 
-            fmt = "bestvideo+bestaudio/best"
+            q_name, fmt = self.prompt_video_quality()
+
             ydl_opts = self._build_ydl_opts(
                 fmt,
                 embed_thumb=embed_thumb,
@@ -678,7 +737,7 @@ class SuperDownloader:
             if end_idx:
                 ydl_opts["playlistend"] = int(end_idx)
 
-            console.print(f"[cyan]📋 Downloading playlist…[/cyan]")
+            console.print(f"[cyan]📋 Downloading playlist: {q_name}…[/cyan]")
             filepath = self.download(url, ydl_opts)
 
         else:
