@@ -405,8 +405,14 @@ class SuperDownloader:
             # MKV supports every codec natively (AV1, VP9, Opus) without re-encoding.
             # mp4 would force AAC transcode for Opus audio — lossy and slower.
             "merge_output_format": "mkv",
-            # Prioritize: 1. Resolution 2. Video Bitrate (heaviest file) 3. Audio Bitrate
-            "format_sort": ["res", "vbr", "abr"],
+            # Sort priority: resolution → AV1 > VP9 > H264 → bitrate → filesize
+            "format_sort": [
+                "res",               # highest resolution first
+                "codec:av01:vp9",    # AV1 > VP9 > anything else
+                "vbr",               # higher video bitrate at same res
+                "acodec:opus:aac",   # Opus > AAC for audio
+                "abr",               # higher audio bitrate
+            ],
             "progress_hooks": [self.rich_progress.hook],
             "quiet": True,
             "no_warnings": True,
@@ -578,7 +584,8 @@ class SuperDownloader:
 
         # ── Mode: Best Quality ────────────────
         if choice == "1":
-            fmt = "bestvideo+bestaudio/best"
+            # * = allow cross-container selection (e.g. webm video + m4a audio)
+            fmt = "bestvideo*+bestaudio*/best"
             ydl_opts = self._build_ydl_opts(
                 fmt,
                 embed_thumb=embed_thumb,
@@ -644,7 +651,7 @@ class SuperDownloader:
             start_idx = IntPrompt.ask("  Start index [dim](1 = first)[/dim]", default=1)
             end_idx   = Prompt.ask("  End index   [dim](leave blank for all)[/dim]", default="").strip()
 
-            fmt = "bestvideo+bestaudio/best"
+            fmt = "bestvideo*+bestaudio*/best"
             ydl_opts = self._build_ydl_opts(
                 fmt,
                 embed_thumb=embed_thumb,
