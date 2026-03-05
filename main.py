@@ -405,15 +405,9 @@ class SuperDownloader:
             # MKV supports every codec natively (AV1, VP9, Opus) without re-encoding.
             # mp4 would force AAC transcode for Opus audio — lossy and slower.
             "merge_output_format": "mkv",
-            # Sort priority: resolution → AV1 > VP9 > H264 → bitrate → filesize
-            # This guarantees yt-dlp picks 4K/8K AV1 over 1080p H264 every time.
-            "format_sort": [
-                "res",               # highest resolution first
-                "codec:av01:vp9",    # AV1 > VP9 > anything else
-                "vbr",               # higher video bitrate at same res
-                "acodec:opus:aac",   # Opus > AAC for audio
-                "abr",               # higher audio bitrate
-            ],
+            # Keep sorting simple: strict resolution priority usually works best
+            # Complex codec sorting can cause yt-dlp to pick 1080p AV1 over 4K VP9.
+            "format_sort": ["res"],
             "progress_hooks": [self.rich_progress.hook],
             "quiet": True,
             "no_warnings": True,
@@ -585,8 +579,7 @@ class SuperDownloader:
 
         # ── Mode: Best Quality ────────────────
         if choice == "1":
-            # * = allow cross-container selection (e.g. webm video + m4a audio)
-            fmt = "bestvideo*+bestaudio*/best"
+            fmt = "bestvideo+bestaudio/best"
             ydl_opts = self._build_ydl_opts(
                 fmt,
                 embed_thumb=embed_thumb,
