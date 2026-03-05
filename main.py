@@ -565,7 +565,7 @@ class SuperDownloader:
 
         # ── Mode: Best Quality ────────────────
         if choice == "1":
-            fmt = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best"
+            fmt = "bestvideo+bestaudio/best"
             ydl_opts = self._build_ydl_opts(
                 fmt,
                 embed_thumb=embed_thumb,
@@ -631,7 +631,7 @@ class SuperDownloader:
             start_idx = IntPrompt.ask("  Start index [dim](1 = first)[/dim]", default=1)
             end_idx   = Prompt.ask("  End index   [dim](leave blank for all)[/dim]", default="").strip()
 
-            fmt = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best"
+            fmt = "bestvideo+bestaudio/best"
             ydl_opts = self._build_ydl_opts(
                 fmt,
                 embed_thumb=embed_thumb,
