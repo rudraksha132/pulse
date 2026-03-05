@@ -402,44 +402,75 @@ class SuperDownloader:
         opts: dict = {
             "format": fmt,
             "outtmpl": outtmpl,
-            # MKV supports every codec natively (AV1, VP9, Opus) without re-encoding.
-            # mp4 would force AAC transcode for Opus audio — lossy and slower.
+
+            # ── Container ────────────────────────────────────────────────────
+            # MKV holds any codec (AV1, VP9, Opus) without re-encoding.
+            # mp4 forces lossy AAC transcode for Opus audio.
             "merge_output_format": "mkv",
-            # 1. Resolution, 2. Highest Bitrate (Heaviest file), 3. Best Codecs
-            "format_sort": [
-                "res",               # highest resolution first
-                "vbr",               # explicitly force highest video bitrate before codec
-                "codec:av01:vp9",    # AV1 > VP9
-                "acodec:opus:aac",   # Opus > AAC for audio
-                "abr",               # higher audio bitrate
-            ],
+
+            # ── Format Sort — from yt-dlp docs (fields in priority order) ───
+            # res: highest resolution first
+            # fps: 60fps > 30fps at same resolution
+            # hdr: prefer HDR streams (DV > HDR10+ > HDR10 > HLG > SDR)
+            # tbr: total bitrate — video+audio combined (largest wins)
+            # size: exact filesize if known, else approx (largest = best quality)
+            # acodec: best audio codec (opus > aac > mp4a etc)
+            # abr: audio bitrate last
+            # NOTE: vcodec is intentionally excluded — including it causes yt-dlp
+            # to pick a smaller AV1 file over a much larger (better) VP9 file.
+            "format_sort": ["res", "fps", "hdr:12", "tbr", "size", "acodec", "abr"],
+            # Force this sort order over extractor defaults
+            "format_sort_force": True,
+
+            # ── Progress & Output ─────────────────────────────────────────────
             "progress_hooks": [self.rich_progress.hook],
             "quiet": True,
             "no_warnings": True,
-            "concurrent_fragment_downloads": 16,  # saturate connection
-            # Download in 10 MB chunks — avoids YouTube's per-request throttle
+
+            # ── Download Speed Optimizations ─────────────────────────────────
+            # 16 parallel fragment downloads significantly boosts throughput
+            "concurrent_fragment_downloads": 16,
+            # 10 MB chunks bypasses YouTube's per-small-request throttle wall
             "http_chunk_size": 10 * 1024 * 1024,
             "retries": MAX_RETRIES,
             "fragment_retries": MAX_RETRIES,
+
             "postprocessors": postprocessors,
-            # tv_embedded bypasses throttle on high-res streams that web client limits.
+
+            # ── YouTube Player Client Selection ───────────────────────────────
+            # tv_embedded: unlocks 4K/8K streams throttled on the web client
+            # ios, android: fallback clients with good format availability
+            # NOTE: android_vr is intentionally excluded — it returns video-only
+            # streams with no matching audio tracks (confirmed cause of silence).
             "extractor_args": {"youtube": {
-                "player_client": ["tv_embedded", "android", "ios", "web"],
+                "player_client": ["tv_embedded", "ios", "android", "web"],
+                # duplicate: expose all streams including alternate CDN copies
+                "formats": ["duplicate"],
             }},
-            # aria2c opens up to 16 connections per file automatically.
+
+            # ── aria2c External Downloader (16 parallel connections) ──────────
+            # When aria2c is installed, each file downloads via 16 connections
+            # instead of 1 — massively faster on high-bandwidth connections.
+            # Install: winget install aria2
             "external_downloader": "aria2c" if shutil.which("aria2c") else None,
-            "external_downloader_args": {"aria2c": ["-c", "-j", "16", "-x", "16", "-s", "16", "-k", "1M"]}
-                if shutil.which("aria2c") else None,
+            "external_downloader_args": {"aria2c": [
+                "-c",           # resume partial downloads
+                "-j", "16",     # 16 parallel download jobs
+                "-x", "16",     # 16 connections per server
+                "-s", "16",     # split each file into 16 segments
+                "-k", "1M",     # 1 MB chunk size per segment
+            ]} if shutil.which("aria2c") else None,
+
             "writethumbnail": embed_thumb,
             "writesubtitles": write_subs,
             "embedsubtitles": embed_subs,
             "subtitleslangs": [sub_langs] if (write_subs or embed_subs) else [],
             "keepvideo": False,
-            "overwrites": True,           # always re-download, never skip an existing file
+            "overwrites": True,           # always re-download, never skip existing file
         }
 
         if not ffmpeg_available():
-            # Without FFmpeg, yt-dlp can't merge separate video+audio.
+            # Without FFmpeg, yt-dlp can't merge separate video+audio streams.
             # Fall back to the best pre-merged stream available.
             opts["format"] = "best"
             opts.pop("merge_output_format", None)
