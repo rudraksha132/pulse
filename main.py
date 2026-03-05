@@ -402,16 +402,36 @@ class SuperDownloader:
         opts: dict = {
             "format": fmt,
             "outtmpl": outtmpl,
-            "merge_output_format": "mp4",
+            # MKV supports every codec natively (AV1, VP9, Opus) without re-encoding.
+            # mp4 would force AAC transcode for Opus audio — lossy and slower.
+            "merge_output_format": "mkv",
+            # Sort priority: resolution → AV1 > VP9 > H264 → bitrate → filesize
+            # This guarantees yt-dlp picks 4K/8K AV1 over 1080p H264 every time.
+            "format_sort": [
+                "res",               # highest resolution first
+                "codec:av01:vp9",    # AV1 > VP9 > anything else
+                "vbr",               # higher video bitrate at same res
+                "acodec:opus:aac",   # Opus > AAC for audio
+                "abr",               # higher audio bitrate
+            ],
             "progress_hooks": [self.rich_progress.hook],
             "quiet": True,
             "no_warnings": True,
-            "concurrent_fragment_downloads": CONCURRENT_DL,
+            "concurrent_fragment_downloads": 16,  # saturate connection
+            # Download in 10 MB chunks — avoids YouTube's per-request throttle
+            "http_chunk_size": 10 * 1024 * 1024,
             "retries": MAX_RETRIES,
             "fragment_retries": MAX_RETRIES,
             "postprocessors": postprocessors,
-            "extractor_args": {"youtube": {"player_client": ["android", "ios", "web"]}},
-            "writethumbnail": embed_thumb,       # yt-dlp downloads thumbnail for embedding
+            # tv_embedded bypasses throttle on high-res streams that web client limits.
+            "extractor_args": {"youtube": {
+                "player_client": ["tv_embedded", "android", "ios", "web"],
+            }},
+            # aria2c opens up to 16 connections per file automatically.
+            "external_downloader": "aria2c" if shutil.which("aria2c") else None,
+            "external_downloader_args": {"aria2c": ["-c", "-j", "16", "-x", "16", "-s", "16", "-k", "1M"]}
+                if shutil.which("aria2c") else None,
+            "writethumbnail": embed_thumb,
             "writesubtitles": write_subs,
             "embedsubtitles": embed_subs,
             "subtitleslangs": [sub_langs] if (write_subs or embed_subs) else [],
@@ -565,7 +585,8 @@ class SuperDownloader:
 
         # ── Mode: Best Quality ────────────────
         if choice == "1":
-            fmt = "bestvideo+bestaudio/best"
+            # * = allow cross-container selection (e.g. webm video + m4a audio)
+            fmt = "bestvideo*+bestaudio*/best"
             ydl_opts = self._build_ydl_opts(
                 fmt,
                 embed_thumb=embed_thumb,
@@ -631,7 +652,7 @@ class SuperDownloader:
             start_idx = IntPrompt.ask("  Start index [dim](1 = first)[/dim]", default=1)
             end_idx   = Prompt.ask("  End index   [dim](leave blank for all)[/dim]", default="").strip()
 
-            fmt = "bestvideo+bestaudio/best"
+            fmt = "bestvideo*+bestaudio*/best"
             ydl_opts = self._build_ydl_opts(
                 fmt,
                 embed_thumb=embed_thumb,
