@@ -79,6 +79,34 @@ def format_bytes(size: float | None) -> str:
     return f"{size:.1f} PB"
 
 
+def estimate_video_size(duration_s: float, height: int | None) -> str:
+    """
+    Estimate video file size from duration and target resolution height.
+    Uses conservative typical combined (video+audio) bitrates.
+    Heights map to approx bitrates (kbps):
+      4320→80000, 2160→20000, 1440→8000, 1080→5500,
+      720→3000, 480→1500, 360→800, 240→400, 144→200
+    """
+    if not duration_s or not height:
+        return ""
+    bitrate_map = [
+        (4320, 80_000), (2160, 20_000), (1440, 8_000), (1080, 5_500),
+        (720,  3_000),  (480,  1_500),  (360,   800),  (240,   400),
+        (144,   200),
+    ]
+    kbps = next((b for h, b in bitrate_map if height >= h), 200)
+    size_bytes = (kbps * 1000 / 8) * duration_s
+    return format_bytes(size_bytes)
+
+
+def estimate_audio_size(duration_s: float, kbps: int) -> str:
+    """Estimate audio file size from duration and bitrate in kbps."""
+    if not duration_s:
+        return ""
+    size_bytes = (kbps * 1000 / 8) * duration_s
+    return format_bytes(size_bytes)
+
+
 def parse_timestamp(ts: str) -> float:
     """Convert HH:MM:SS or MM:SS or seconds string to float seconds."""
     parts = ts.strip().split(":")
@@ -552,26 +580,31 @@ class SuperDownloader:
                 return out
         return filepath
 
-    def prompt_video_quality(self) -> tuple[str, str]:
+    def prompt_video_quality(self, info: dict) -> tuple[str, str]:
+        duration = float(info.get("duration") or 0)
+        # (label, yt-dlp format string, height for size estimate or None)
         qualities = [
-            ("Best Available (Up to 8K)", "bestvideo+bestaudio/best"),
-            ("8K (4320p)", "bestvideo[height<=4320]+bestaudio/best[height<=4320]/best"),
-            ("4K (2160p)", "bestvideo[height<=2160]+bestaudio/best[height<=2160]/best"),
-            ("1440p (2K)", "bestvideo[height<=1440]+bestaudio/best[height<=1440]/best"),
-            ("1080p (FHD)", "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best"),
-            ("720p (HD)", "bestvideo[height<=720]+bestaudio/best[height<=720]/best"),
-            ("480p (SD)", "bestvideo[height<=480]+bestaudio/best[height<=480]/best"),
-            ("360p", "bestvideo[height<=360]+bestaudio/best[height<=360]/best"),
-            ("240p", "bestvideo[height<=240]+bestaudio/best[height<=240]/best"),
-            ("144p", "bestvideo[height<=144]+bestaudio/best[height<=144]/best"),
-            ("Worst Available (Smallest)", "worstvideo+worstaudio/worst"),
+            ("Best Available (Up to 8K)", "bestvideo+bestaudio/best",                               4320),
+            ("8K   (4320p)",              "bestvideo[height<=4320]+bestaudio/best[height<=4320]/best", 4320),
+            ("4K   (2160p)",              "bestvideo[height<=2160]+bestaudio/best[height<=2160]/best", 2160),
+            ("1440p (2K)",                "bestvideo[height<=1440]+bestaudio/best[height<=1440]/best", 1440),
+            ("1080p (FHD)",               "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best", 1080),
+            ("720p  (HD)",                "bestvideo[height<=720]+bestaudio/best[height<=720]/best",    720),
+            ("480p  (SD)",                "bestvideo[height<=480]+bestaudio/best[height<=480]/best",    480),
+            ("360p",                      "bestvideo[height<=360]+bestaudio/best[height<=360]/best",    360),
+            ("240p",                      "bestvideo[height<=240]+bestaudio/best[height<=240]/best",    240),
+            ("144p",                      "bestvideo[height<=144]+bestaudio/best[height<=144]/best",    144),
+            ("Worst Available",           "worstvideo+worstaudio/worst",                               144),
         ]
         quality_opts = Table.grid(padding=(0, 2))
-        quality_opts.add_column(style="bold yellow")
-        quality_opts.add_column()
-        for i, (name, _) in enumerate(qualities, 1):
-            quality_opts.add_row(str(i), f"[cyan]{name}[/cyan]")
-        
+        quality_opts.add_column(style="bold yellow", min_width=3)
+        quality_opts.add_column(min_width=18)
+        quality_opts.add_column(style="dim green", min_width=10)
+        for i, (name, _, height) in enumerate(qualities, 1):
+            est = estimate_video_size(duration, height) if duration else "—"
+            size_label = f"≈ {est}" if est else "—"
+            quality_opts.add_row(str(i), f"[cyan]{name}[/cyan]", size_label)
+
         console.print()
         console.print(Rule("[dim]Video Quality[/dim]"))
         console.print(quality_opts)
@@ -579,23 +612,27 @@ class SuperDownloader:
         q_idx = max(1, min(q_idx, len(qualities)))
         return qualities[q_idx - 1][0], qualities[q_idx - 1][1]
 
-    def prompt_audio_quality(self) -> str:
+    def prompt_audio_quality(self, duration: float = 0) -> str:
+        # (label, yt-dlp quality string, kbps for estimate; 0 = VBR ~256kbps avg)
         qualities = [
-            ("Best (VBR/Lossless)", "0"),
-            ("320 kbps (CBR)", "320"),
-            ("256 kbps (CBR)", "256"),
-            ("192 kbps (CBR)", "192"),
-            ("128 kbps (CBR)", "128"),
-            ("96 kbps (CBR)", "96"),
-            ("64 kbps (CBR)", "64"),
-            ("Worst", "9"),
+            ("Best (VBR/Lossless)", "0",   256),
+            ("320 kbps",            "320",  320),
+            ("256 kbps",            "256",  256),
+            ("192 kbps",            "192",  192),
+            ("128 kbps",            "128",  128),
+            ("96 kbps",             "96",    96),
+            ("64 kbps",             "64",    64),
+            ("Worst (~32 kbps)",    "9",     32),
         ]
         quality_opts = Table.grid(padding=(0, 2))
-        quality_opts.add_column(style="bold yellow")
-        quality_opts.add_column()
-        for i, (name, _) in enumerate(qualities, 1):
-            quality_opts.add_row(str(i), f"[cyan]{name}[/cyan]")
-        
+        quality_opts.add_column(style="bold yellow", min_width=3)
+        quality_opts.add_column(min_width=20)
+        quality_opts.add_column(style="dim green", min_width=10)
+        for i, (name, _, kbps) in enumerate(qualities, 1):
+            est = estimate_audio_size(duration, kbps) if duration else "—"
+            size_label = f"≈ {est}" if est else "—"
+            quality_opts.add_row(str(i), f"[cyan]{name}[/cyan]", size_label)
+
         console.print()
         console.print(Rule("[dim]Audio Extraction Quality[/dim]"))
         console.print(quality_opts)
@@ -650,7 +687,7 @@ class SuperDownloader:
 
         # ── Mode: Video Download ────────────────
         if choice == "1":
-            q_name, fmt = self.prompt_video_quality()
+            q_name, fmt = self.prompt_video_quality(info)
             ydl_opts = self._build_ydl_opts(
                 fmt,
                 embed_thumb=embed_thumb,
@@ -673,9 +710,10 @@ class SuperDownloader:
             idx = max(1, min(idx, len(keys)))
             audio_fmt = keys[idx - 1]
 
+            duration = float(info.get("duration") or 0)
             audio_quality = "0"
             if audio_fmt in ("mp3", "aac", "m4a", "opus"):
-                audio_quality = self.prompt_audio_quality()
+                audio_quality = self.prompt_audio_quality(duration)
 
             ydl_opts = self._build_ydl_opts(
                 "bestaudio/best",
@@ -722,7 +760,7 @@ class SuperDownloader:
             start_idx = IntPrompt.ask("  Start index [dim](1 = first)[/dim]", default=1)
             end_idx   = Prompt.ask("  End index   [dim](leave blank for all)[/dim]", default="").strip()
 
-            q_name, fmt = self.prompt_video_quality()
+            q_name, fmt = self.prompt_video_quality(info)
 
             ydl_opts = self._build_ydl_opts(
                 fmt,
