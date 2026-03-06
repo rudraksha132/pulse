@@ -82,19 +82,16 @@ def format_bytes(size: float | None) -> str:
 def estimate_video_size(duration_s: float, height: int | None) -> str:
     """
     Estimate video file size from duration and target resolution height.
-    Uses conservative typical combined (video+audio) bitrates.
-    Heights map to approx bitrates (kbps):
-      4320→80000, 2160→20000, 1440→8000, 1080→5500,
-      720→3000, 480→1500, 360→800, 240→400, 144→200
+    Uses typical YouTube combined (video+audio) streaming bitrates (VP9/AV1).
     """
     if not duration_s or not height:
         return ""
     bitrate_map = [
-        (4320, 80_000), (2160, 20_000), (1440, 8_000), (1080, 5_500),
-        (720,  3_000),  (480,  1_500),  (360,   800),  (240,   400),
-        (144,   200),
+        (4320, 25_000), (2160, 12_000), (1440, 6_000), (1080, 2_500),
+        (720,  1_200),  (480,    700),  (360,   400),  (240,   250),
+        (144,    100),
     ]
-    kbps = next((b for h, b in bitrate_map if height >= h), 200)
+    kbps = next((b for h, b in bitrate_map if height >= h), 100)
     size_bytes = (kbps * 1000 / 8) * duration_s
     return format_bytes(size_bytes)
 
@@ -581,36 +578,80 @@ class SuperDownloader:
         return filepath
 
     def prompt_video_quality(self, info: dict) -> tuple[str, str]:
-        duration = float(info.get("duration") or 0)
-        # (label, yt-dlp format string, height for size estimate or None)
-        qualities = [
-            ("Best Available (Up to 8K)", "bestvideo+bestaudio/best",                               4320),
-            ("8K   (4320p)",              "bestvideo[height<=4320]+bestaudio/best[height<=4320]/best", 4320),
-            ("4K   (2160p)",              "bestvideo[height<=2160]+bestaudio/best[height<=2160]/best", 2160),
-            ("1440p (2K)",                "bestvideo[height<=1440]+bestaudio/best[height<=1440]/best", 1440),
-            ("1080p (FHD)",               "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best", 1080),
-            ("720p  (HD)",                "bestvideo[height<=720]+bestaudio/best[height<=720]/best",    720),
-            ("480p  (SD)",                "bestvideo[height<=480]+bestaudio/best[height<=480]/best",    480),
-            ("360p",                      "bestvideo[height<=360]+bestaudio/best[height<=360]/best",    360),
-            ("240p",                      "bestvideo[height<=240]+bestaudio/best[height<=240]/best",    240),
-            ("144p",                      "bestvideo[height<=144]+bestaudio/best[height<=144]/best",    144),
-            ("Worst Available",           "worstvideo+worstaudio/worst",                               144),
-        ]
+        formats = info.get("formats", [])
+        
+        # 1. Exact sizes from available streams
+        best_audio_size = 0
+        for f in formats:
+            if f.get("acodec") != "none" and f.get("vcodec") == "none":
+                size = f.get("filesize") or f.get("filesize_approx") or 0
+                if size > best_audio_size:
+                    best_audio_size = size
+
+        height_info = {}
+        for f in formats:
+            vcodec = f.get("vcodec")
+            h = f.get("height")
+            if vcodec == "none" or not h:
+                continue
+            
+            size = f.get("filesize") or f.get("filesize_approx") or 0
+            is_video_only = f.get("acodec") == "none"
+            total_size = size + (best_audio_size if is_video_only else 0)
+            
+            if h not in height_info or total_size > height_info[h]:
+                height_info[h] = total_size
+
+        labels = {
+            4320: "8K (4320p)",
+            2160: "4K (2160p)",
+            1440: "1440p (2K)",
+            1080: "1080p (FHD)",
+            720:  "720p (HD)",
+            480:  "480p (SD)",
+            360:  "360p",
+            240:  "240p",
+            144:  "144p"
+        }
+        
+        available_heights = sorted(height_info.keys(), reverse=True)
+        qualities = []
+        
+        for h in available_heights:
+            size_bytes = height_info[h]
+            if size_bytes > 0:
+                size_str = f"≈ {format_bytes(size_bytes)}"
+            else:
+                duration = float(info.get("duration") or 0)
+                est = estimate_video_size(duration, h) if duration else "—"
+                size_str = f"≈ {est} (est)"
+
+            name = labels.get(h, f"{h}p")
+            fmt_str = f"bestvideo[height<={h}]+bestaudio/best[height<={h}]/best"
+            qualities.append({"name": name, "fmt": fmt_str, "size": size_str})
+            
+        if qualities:
+            max_name = qualities[0]["name"]
+            top_size = qualities[0]["size"]
+            qualities.insert(0, {"name": f"Best Available ({max_name})", "fmt": "bestvideo+bestaudio/best", "size": top_size})
+        else:
+            qualities.append({"name": "Best Available", "fmt": "bestvideo+bestaudio/best", "size": "—"})
+
         quality_opts = Table.grid(padding=(0, 2))
         quality_opts.add_column(style="bold yellow", min_width=3)
-        quality_opts.add_column(min_width=18)
+        quality_opts.add_column(min_width=28)
         quality_opts.add_column(style="dim green", min_width=10)
-        for i, (name, _, height) in enumerate(qualities, 1):
-            est = estimate_video_size(duration, height) if duration else "—"
-            size_label = f"≈ {est}" if est else "—"
-            quality_opts.add_row(str(i), f"[cyan]{name}[/cyan]", size_label)
+        
+        for i, q in enumerate(qualities, 1):
+            quality_opts.add_row(str(i), f"[cyan]{q['name']}[/cyan]", q['size'])
 
         console.print()
-        console.print(Rule("[dim]Video Quality[/dim]"))
+        console.print(Rule("[dim]Available Video Qualities[/dim]"))
         console.print(quality_opts)
         q_idx = IntPrompt.ask("Select Quality", default=1, show_default=True)
         q_idx = max(1, min(q_idx, len(qualities)))
-        return qualities[q_idx - 1][0], qualities[q_idx - 1][1]
+        choice = qualities[q_idx - 1]
+        return choice["name"], choice["fmt"]
 
     def prompt_audio_quality(self, duration: float = 0) -> str:
         # (label, yt-dlp quality string, kbps for estimate; 0 = VBR ~256kbps avg)

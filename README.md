@@ -67,14 +67,14 @@ Choose from 11 quality presets, with **estimated file sizes** calculated from th
 
 | # | Quality | Typical Bitrate |
 |---|---------|----------------|
-| 1 | Best Available (up to 8K) | ~80,000 kbps |
-| 2 | 8K · 4320p | ~80,000 kbps |
-| 3 | 4K · 2160p | ~20,000 kbps |
-| 4 | 1440p · 2K | ~8,000 kbps |
-| 5 | 1080p · FHD | ~5,500 kbps |
-| 6 | 720p · HD | ~3,000 kbps |
-| 7 | 480p · SD | ~1,500 kbps |
-| 8–11 | 360p / 240p / 144p / Worst | ~800–200 kbps |
+| 1 | Best Available (up to 8K) | ~25,000 kbps |
+| 2 | 8K · 4320p | ~25,000 kbps |
+| 3 | 4K · 2160p | ~12,000 kbps |
+| 4 | 1440p · 2K | ~6,000 kbps |
+| 5 | 1080p · FHD | ~2,500 kbps |
+| 6 | 720p · HD | ~1,200 kbps |
+| 7 | 480p · SD | ~700 kbps |
+| 8–11 | 360p / 240p / 144p / Worst | ~400–100 kbps |
 
 Video streams are merged with the best available audio via FFmpeg into an **MKV container** (supports AV1, VP9, H.265, H.264), then losslessly remuxed to **MP4** — no re-encoding, no quality loss.
 
