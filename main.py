@@ -137,9 +137,8 @@ def print_header() -> None:
     else:
         out_dir = os.path.abspath(DOWNLOAD_DIR)
         dir_url = "file:///" + out_dir.replace("\\", "/")
-        link_str = f"\x1b]8;;{dir_url}\x1b\\{out_dir}\x1b]8;;\x1b\\"
         console.print(f"[dim]FFmpeg:[/dim] [green]{FFMPEG_PATH}[/green]  "
-                      f"[dim]Output:[/dim] [cyan]{link_str}[/cyan]")
+                      f"[dim]Output:[/dim] [link={dir_url}][cyan]{out_dir}[/cyan][/link]")
     console.print()
 
 
@@ -553,8 +552,7 @@ class SuperDownloader:
         if os.path.exists(out):
             out_abs = os.path.abspath(out)
             file_url = "file:///" + out_abs.replace("\\", "/")
-            link_str = f"\x1b]8;;{file_url}\x1b\\{out_abs}\x1b]8;;\x1b\\"
-            console.print(f"[green]✅ Clip saved:[/green] {link_str}")
+            console.print(f"[green]✅ Clip saved:[/green] [link={file_url}]{out_abs}[/link]")
             if Confirm.ask("  Delete original file?", default=False):
                 os.remove(filepath)
                 return out
@@ -581,8 +579,7 @@ class SuperDownloader:
             if os.path.exists(out):
                 out_abs = os.path.abspath(out)
                 file_url = "file:///" + out_abs.replace("\\", "/")
-                link_str = f"\x1b]8;;{file_url}\x1b\\{out_abs}\x1b]8;;\x1b\\"
-                console.print(f"[green]✅ Subtitled video:[/green] {link_str}")
+                console.print(f"[green]✅ Subtitled video:[/green] [link={file_url}]{out_abs}[/link]")
                 return out
         return filepath
 
@@ -847,8 +844,7 @@ class SuperDownloader:
             ))
             
             file_url = "file:///" + file_abs.replace("\\", "/")
-            link_str = f"\x1b]8;;{file_url}\x1b\\{file_abs}\x1b]8;;\x1b\\"
-            console.print(f"[dim]Saved:[/dim] [cyan]{link_str}[/cyan]")
+            console.print(f"[dim]Saved:[/dim] [link={file_url}][cyan]{file_abs}[/cyan][/link]")
 
             # Add metadata
             if ffmpeg_available() and choice in ("1", "3"):
@@ -868,8 +864,8 @@ class SuperDownloader:
 
             file_abs = os.path.abspath(filepath)
             file_url = "file:///" + file_abs.replace("\\", "/")
-            link_str = f"\x1b]8;;{file_url}\x1b\\{file_abs}\x1b]8;;\x1b\\"
-            console.print(f"\n[dim]Final path:[/dim] [bold cyan]{link_str}[/bold cyan]")
+            console.print(f"\n[dim]Final path:[/dim] [link={file_url}][bold cyan]{file_abs}[/bold cyan][/link]")
+            console.print(f"[dim]Direct Link:[/dim] [yellow]{file_url}[/yellow]")
             
             # Offer to open the file
             if Confirm.ask("\n[cyan]▶ Open the downloaded file now?[/cyan]", default=True):
@@ -887,8 +883,8 @@ class SuperDownloader:
                 border_style="green",
             ))
             dir_url = "file:///" + dir_abs.replace("\\", "/")
-            link_str = f"\x1b]8;;{dir_url}\x1b\\{dir_abs}\x1b]8;;\x1b\\"
-            console.print(f"[dim]Folder:[/dim] [cyan]{link_str}[/cyan]")
+            console.print(f"[dim]Folder:[/dim] [link={dir_url}][cyan]{dir_abs}[/cyan][/link]")
+            console.print(f"[dim]Direct Link:[/dim] [yellow]{dir_url}[/yellow]")
             
             # Offer to open the folder
             if Confirm.ask("\n[cyan]📂 Open the downloads folder now?[/cyan]", default=True):
