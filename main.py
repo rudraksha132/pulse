@@ -135,8 +135,11 @@ def print_header() -> None:
             border_style="yellow",
         ))
     else:
+        out_dir = os.path.abspath(DOWNLOAD_DIR)
+        dir_url = "file:///" + out_dir.replace("\\", "/")
+        link_str = f"\x1b]8;;{dir_url}\x1b\\{out_dir}\x1b]8;;\x1b\\"
         console.print(f"[dim]FFmpeg:[/dim] [green]{FFMPEG_PATH}[/green]  "
-                      f"[dim]Output:[/dim] [cyan]{os.path.abspath(DOWNLOAD_DIR)}[/cyan]")
+                      f"[dim]Output:[/dim] [cyan]{link_str}[/cyan]")
     console.print()
 
 
@@ -548,7 +551,10 @@ class SuperDownloader:
         clip_video(filepath, start, end, out)
 
         if os.path.exists(out):
-            console.print(f"[green]✅ Clip saved:[/green] {os.path.abspath(out)}")
+            out_abs = os.path.abspath(out)
+            file_url = "file:///" + out_abs.replace("\\", "/")
+            link_str = f"\x1b]8;;{file_url}\x1b\\{out_abs}\x1b]8;;\x1b\\"
+            console.print(f"[green]✅ Clip saved:[/green] {link_str}")
             if Confirm.ask("  Delete original file?", default=False):
                 os.remove(filepath)
                 return out
@@ -573,7 +579,10 @@ class SuperDownloader:
             out = base + "_subbed" + ext
             burn_subtitles(filepath, srt, out)
             if os.path.exists(out):
-                console.print(f"[green]✅ Subtitled video:[/green] {os.path.abspath(out)}")
+                out_abs = os.path.abspath(out)
+                file_url = "file:///" + out_abs.replace("\\", "/")
+                link_str = f"\x1b]8;;{file_url}\x1b\\{out_abs}\x1b]8;;\x1b\\"
+                console.print(f"[green]✅ Subtitled video:[/green] {link_str}")
                 return out
         return filepath
 
@@ -830,11 +839,16 @@ class SuperDownloader:
             if ffmpeg_available() and choice in ("1", "3", "4") and filepath.endswith(".mkv"):
                 filepath = remux_mkv_to_mp4(filepath)
 
+            file_abs = os.path.abspath(filepath)
+            
             console.print(Panel(
-                f"[bold green]✅ Download complete![/bold green]\n"
-                f"[dim]Saved:[/dim] [cyan]{os.path.abspath(filepath)}[/cyan]",
+                "[bold green]✅ Download complete![/bold green]",
                 border_style="green",
             ))
+            
+            file_url = "file:///" + file_abs.replace("\\", "/")
+            link_str = f"\x1b]8;;{file_url}\x1b\\{file_abs}\x1b]8;;\x1b\\"
+            console.print(f"[dim]Saved:[/dim] [cyan]{link_str}[/cyan]")
 
             # Add metadata
             if ffmpeg_available() and choice in ("1", "3"):
@@ -852,14 +866,38 @@ class SuperDownloader:
             if write_subs and ffmpeg_available() and choice in ("1", "3"):
                 filepath = self.maybe_burn_subs(filepath)
 
-            console.print(f"\n[dim]Final path:[/dim] [bold cyan]{os.path.abspath(filepath)}[/bold cyan]")
+            file_abs = os.path.abspath(filepath)
+            file_url = "file:///" + file_abs.replace("\\", "/")
+            link_str = f"\x1b]8;;{file_url}\x1b\\{file_abs}\x1b]8;;\x1b\\"
+            console.print(f"\n[dim]Final path:[/dim] [bold cyan]{link_str}[/bold cyan]")
+            
+            # Offer to open the file
+            if Confirm.ask("\n[cyan]▶ Open the downloaded file now?[/cyan]", default=True):
+                if sys.platform == "win32":
+                    os.startfile(file_abs)
+                elif sys.platform == "darwin":
+                    subprocess.call(["open", file_abs])
+                else:
+                    subprocess.call(["xdg-open", file_abs])
 
         elif filepath == DOWNLOAD_DIR:
+            dir_abs = os.path.abspath(DOWNLOAD_DIR)
             console.print(Panel(
-                f"[bold green]✅ Playlist downloaded![/bold green]\n"
-                f"[dim]Folder:[/dim] [cyan]{os.path.abspath(DOWNLOAD_DIR)}[/cyan]",
+                "[bold green]✅ Playlist downloaded![/bold green]",
                 border_style="green",
             ))
+            dir_url = "file:///" + dir_abs.replace("\\", "/")
+            link_str = f"\x1b]8;;{dir_url}\x1b\\{dir_abs}\x1b]8;;\x1b\\"
+            console.print(f"[dim]Folder:[/dim] [cyan]{link_str}[/cyan]")
+            
+            # Offer to open the folder
+            if Confirm.ask("\n[cyan]📂 Open the downloads folder now?[/cyan]", default=True):
+                if sys.platform == "win32":
+                    os.startfile(dir_abs)
+                elif sys.platform == "darwin":
+                    subprocess.call(["open", dir_abs])
+                else:
+                    subprocess.call(["xdg-open", dir_abs])
         else:
             console.print("[red]⚠  Could not determine output file.[/red]")
 
