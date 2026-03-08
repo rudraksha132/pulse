@@ -155,16 +155,18 @@ def run_ffmpeg(*args: str, show_output: bool = False) -> subprocess.CompletedPro
 
 def remux_mkv_to_mp4(mkv_path: str) -> str:
     """
-    Losslessly remux an MKV file to MP4 using stream-copy (no re-encoding).
-    MKV is used during merge to support any codec (AV1/VP9); then we swap
-    the container to MP4 without touching the video/audio data.
+    Remux an MKV file to MP4. Copies the video stream losslessly,
+    but transcodes the audio to AAC to ensure compatibility with
+    standard players (like Windows Photos) which may fail to play Opus/Vorbis in MP4.
     Returns the new .mp4 path, or the original mkv path if remux fails.
     """
     mp4_path = os.path.splitext(mkv_path)[0] + ".mp4"
-    with console.status("[cyan]📦 Remuxing MKV → MP4 (lossless)…", spinner="dots"):
+    with console.status("[cyan]📦 Remuxing MKV → MP4 (converting audio to AAC)…", spinner="dots"):
         result = run_ffmpeg(
             "-i", mkv_path,
-            "-c", "copy",          # stream-copy: no re-encode, no quality loss
+            "-c:v", "copy",             # stream-copy video
+            "-c:a", "aac",              # transcode audio to AAC for MP4 compatibility
+            "-b:a", "256k",             # high quality audio
             "-movflags", "+faststart",  # moves index to front for web streaming
             mp4_path,
         )
