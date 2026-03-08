@@ -149,7 +149,7 @@ def run_ffmpeg(*args: str, show_output: bool = False) -> subprocess.CompletedPro
     """Run FFmpeg with optional stderr suppression."""
     cmd = [FFMPEG_PATH, "-y"] + list(args)
     if not show_output:
-        return subprocess.run(cmd, capture_output=True, text=True)
+        return subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
     return subprocess.run(cmd)
 
 
