@@ -76,7 +76,7 @@ Choose from 11 quality presets, with **estimated file sizes** calculated from th
 | 7 | 480p · SD | ~700 kbps |
 | 8–11 | 360p / 240p / 144p / Worst | ~400–100 kbps |
 
-Video streams are merged with the best available audio via FFmpeg into an **MKV container** (supports AV1, VP9, H.265, H.264), then losslessly remuxed to **MP4** — no re-encoding, no quality loss.
+Video streams are merged with the best available audio via FFmpeg into an **MKV container** (supports AV1, VP9, H.265, H.264), then remuxed to **MP4** (video is losslessly copied, while audio is transcoded to AAC for universal player compatibility).
 
 </details>
 
@@ -113,7 +113,8 @@ FLAC and WAV always encode losslessly regardless of the quality selector.
 | **Subtitle Support** | Download `.srt` files, soft-embed into MP4, or hard-burn directly into the video |
 | **Thumbnail Embedding** | Source thumbnail fetched and embedded into the output file (MP4 / MKV / MP3) |
 | **Metadata Tagging** | Title, artist/uploader, upload year, and source URL written as ID3/MP4 tags |
-| **Video Clipping** | Trim any section by start/end timestamp (`HH:MM:SS`) via lossless stream-copy |
+| **Video Clipping** | Trim any section by start/end timestamp (`HH:MM:SS`) via lossless stream-copy (with re-encoding fallback) |
+| **Auto-Open** | Optional prompt to launch the downloaded media or open its folder upon completion |
 | **Retry Logic** | Exponential backoff — retries up to 3× on transient network failures |
 | **Rich Terminal UI** | Live progress bars, download speed, ETA, spinners, and formatted tables |
 
@@ -136,7 +137,8 @@ Post-processing (optional)
     ├─▶  Embed thumbnail
     ├─▶  Write metadata tags
     ├─▶  Clip by timestamp
-    └─▶  Burn subtitles
+    ├─▶  Burn subtitles
+    └─▶  Auto-open file/folder
 ```
 
 ---
