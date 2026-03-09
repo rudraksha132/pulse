@@ -355,14 +355,14 @@ class SuperDownloader:
                 border_style="blue",
             ))
         else:
-            dur = info.get("duration", 0)
+            dur = info.get("duration") or 0
             h, m, s = dur // 3600, (dur % 3600) // 60, dur % 60
             duration_str = f"{h}h {m}m {s}s" if h else f"{m}m {s}s"
             uploader = info.get("uploader") or info.get("channel") or "Unknown"
             console.print(Panel(
                 f"[bold white]🎬 {info.get('title', 'Unknown')}[/bold white]\n"
                 f"[dim]👤 {uploader}  •  ⏱ {duration_str}  •  "
-                f"👁 {info.get('view_count', 0):,} views[/dim]",
+                f"👁 {(info.get('view_count') or 0):,} views[/dim]",
                 border_style="cyan",
             ))
 
